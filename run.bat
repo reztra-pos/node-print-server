@@ -1,1 +1,1 @@
-npm start
+pm2 start server.js --name signsol-print-server
