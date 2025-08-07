@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const https = require('https');
 const cors = require('cors');
 process.env.PKG_ROOT = __dirname;
 const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
