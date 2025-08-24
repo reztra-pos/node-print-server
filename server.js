@@ -25,7 +25,6 @@ app.use((req, res, next) => {
 // POST API
 app.post('/reztra-kot', async (req, res) => {
     const data = req.body;   
-    console.log(data);
 
     let results = [];
 
@@ -51,7 +50,7 @@ app.post('/reztra-kot', async (req, res) => {
         });
 
         try {
-            let defaultHeight = 210;
+            let defaultHeight = 180;
             if(data.sale_type == 'Delivery') {
                 defaultHeight += 30
             }
@@ -74,7 +73,35 @@ app.post('/reztra-kot', async (req, res) => {
             };
 
             const items = Array.isArray(kitchen.items) ? kitchen.items : [];
-            const canvasHeight = defaultHeight + (items.length * 85);
+            let canvasHeight = defaultHeight;
+
+            const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            items.forEach(item => {
+                canvasHeight += 85; // base height for every item
+            
+                if (item.note) {
+                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+                
+                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                    const lineCount = getWrappedLineCount(tempCtx, `Note: ${item.note}`, maxWidth);
+                
+                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+                }
+            
+                if (item.modifiers_name) {
+                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+                
+                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                    const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers_name}`, maxWidth);
+                
+                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+                }
+            });
+
             const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
             const ctx = canvas.getContext("2d");
 
@@ -156,7 +183,6 @@ const drawReceipt = async (canvas, ctx, saleInfo, kitchen) => {
     y += 10;
     ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
     drawText(`Customer: ${saleInfo.customer_name}, Waiter: ${saleInfo.waiter_name}`, CANVAS_SETTINGS.smallFontSize, 'center');
-    drawText(`Invoice No: ${saleInfo.sale_no}`, CANVAS_SETTINGS.smallFontSize, 'center');
     drawText(`Date: ${saleInfo.date}`, CANVAS_SETTINGS.smallFontSize, 'center');
     if(saleInfo.sale_type == 'Delivery') {
         drawText(`Reference No: ${saleInfo.delivery_partner_ref_no}`, CANVAS_SETTINGS.smallFontSize, 'center');
@@ -164,12 +190,91 @@ const drawReceipt = async (canvas, ctx, saleInfo, kitchen) => {
 
     kitchen.items.forEach((item, i) => {
         ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-        ctx.textAlign = "right"; ctx.fillText(item.secondary_name, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
+        ctx.textAlign = "right"; ctx.fillText(`${item.parent_secondary_name} ${item.secondary_name}`, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
         y += CANVAS_SETTINGS.lineHeight;
-        ctx.textAlign = "left";ctx.fillText(`#${i + 1}. ${item.primary_name}`, CANVAS_SETTINGS.paddingX, y);
-        ctx.textAlign = "right";ctx.fillText(item.qty, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
+        ctx.textAlign = "left";ctx.fillText(`#${i + 1}. ${item.parent_primary_name} ${item.primary_name}`, CANVAS_SETTINGS.paddingX, y);
+        ctx.textAlign = "right";ctx.fillText(`QTY: ${item.qty}`, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
         y += 10;
+        if (item.modifiers_name) {
+            y += CANVAS_SETTINGS.lineHeight;
+            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            ctx.textAlign = "left";
+            const lineCount = wrapText(
+                ctx,
+                `Modifiers: ${item.modifiers_name}`,
+                CANVAS_SETTINGS.paddingX,
+                y,
+                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                CANVAS_SETTINGS.lineHeight
+            );
+        
+            // move y down according to wrapped lines
+            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+            y += 10;
+        }
+        if (item.note) {
+            y += CANVAS_SETTINGS.lineHeight;
+            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            ctx.textAlign = "left";
+            const lineCount = wrapText(
+                ctx,
+                `Note: ${item.note}`,
+                CANVAS_SETTINGS.paddingX,
+                y,
+                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                CANVAS_SETTINGS.lineHeight
+            );
+        
+            // move y down according to wrapped lines
+            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+        }
     });
 
     return y;
 };
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(' ');
+    let line = '';
+    const lines = [];
+
+    for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+
+        if (testWidth > maxWidth && n > 0) {
+            lines.push(line);
+            line = words[n] + ' ';
+        } else {
+            line = testLine;
+        }
+    }
+    lines.push(line);
+
+    lines.forEach((l, i) => {
+        ctx.fillText(l.trim(), x, y + (i * lineHeight));
+    });
+
+    return lines.length; // return number of lines so you can adjust y
+}
+
+function getWrappedLineCount(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    let line = '';
+    let lineCount = 0;
+
+    for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const testWidth = ctx.measureText(testLine).width;
+
+        if (testWidth > maxWidth && n > 0) {
+            lineCount++;
+            line = words[n] + ' ';
+        } else {
+            line = testLine;
+        }
+    }
+    lineCount++;
+    return lineCount;
+}
