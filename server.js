@@ -7,6 +7,7 @@ const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
 const { createCanvas, loadImage } = require('canvas');
 const app = express();
 const port = 4313;
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 // Middleware to parse JSON body
 app.use(express.json());
@@ -177,7 +178,7 @@ app.post('/reztra-bill', async (req, res) => {
         const tempCtx = tempCanvas.getContext('2d');
         
         items.forEach(item => {
-            canvasHeight += 85; // base height for every item
+            canvasHeight += 110; // base height for every item
         
             if (item.note) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
@@ -247,7 +248,7 @@ app.post('/reztra-invoice', async (req, res) => {
         interface: printInterface
     });
     try {
-        let defaultHeight = 1250;
+        let defaultHeight = 1550;
         if(data.sale_info.order_type == 'Delivery') {
             defaultHeight += 30
         }
@@ -255,11 +256,20 @@ app.post('/reztra-invoice', async (req, res) => {
             defaultHeight += 30
         }
 
-        const [logoImage] = await Promise.all([
-            loadImageSafe(data.sale_info.invoice_logo, 'Logo')
+        const base64Data = data.sale_info?.qr_code?.replace(/^data:image\/png;base64,/, "");
+        fs.writeFileSync("qr.png", base64Data, "base64");
+
+        const [logoImage, qrCodeImage] = await Promise.all([
+            loadImageSafe(data.sale_info.invoice_logo, 'Logo'),
+            loadImageSafe('qr.png', 'QR Code')
         ]);
 
         if (!logoImage) defaultHeight -= 350;
+        if (!qrCodeImage) defaultHeight -= 250;
+
+        if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
+            defaultHeight += 50
+        }
         
         const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
         let canvasHeight = defaultHeight;
@@ -267,7 +277,7 @@ app.post('/reztra-invoice', async (req, res) => {
         const tempCtx = tempCanvas.getContext('2d');
         
         items.forEach(item => {
-            canvasHeight += 85; // base height for every item
+            canvasHeight += 110; // base height for every item
         
             if (item.note) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
@@ -291,7 +301,7 @@ app.post('/reztra-invoice', async (req, res) => {
         });
         const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const ctx = canvas.getContext("2d");
-        await drawInvoice(canvas, ctx, data.sale_info, logoImage);
+        await drawInvoice(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
         await printer.execute();
@@ -355,7 +365,7 @@ const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
 
     drawText(`KOT: ${kitchen.kitchen_name}`, CANVAS_SETTINGS.headerFontSize, 'center');
     drawText(`Order Type: ${saleInfo.sale_type}`, CANVAS_SETTINGS.headerFontSize, 'center');
-    drawText(`Order Number: ${saleInfo.order_no}`, CANVAS_SETTINGS.headerFontSize, 'center');
+    drawText(`Order No: ${saleInfo.order_no}`, CANVAS_SETTINGS.headerFontSize, 'center');
     if(saleInfo.sale_type == 'Dine In') {
         drawText(`Table Name: ${saleInfo.table_details}`, CANVAS_SETTINGS.headerFontSize, 'center');
     }
@@ -481,7 +491,7 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     if(saleInfo.order_type == 'Delivery') {
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Reference No", saleInfo.delivery_partner_ref_no, "الرقم المرجعي");
     }
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Number", saleInfo.order_no, "رقم الطلب");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب");
     y += 10;
 
     // Header separator
@@ -621,7 +631,7 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     return y;
 };
 
-const drawInvoice = async (canvas, ctx, saleInfo, logoImage) => {
+const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     let y = 0;
 
     const drawText = (text, size, align = 'center', offsetY = CANVAS_SETTINGS.lineHeight, bold = false) => {
@@ -672,24 +682,35 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage) => {
     ctx.fillStyle = "#ccc";
     ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
     ctx.fillStyle = "black";
-    drawText("DRAFT INVOICE / مسودة الفاتورة", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
+    drawText("SIMPLIFIED TAX INVOICE / فاتورة ضريبية مبسطة", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
     y += 15;
 
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Draft No", saleInfo.sale_no, "رقم الفاتورة");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Invoice No", saleInfo.sale_no, "رقم الفاتورة");
     y += CANVAS_SETTINGS.lineHeight;
-    const [date, time] = saleInfo.date_time.split(" ");
-    drawTripleColumn(ctx, y, "Date", date, "تاريخ الفاتورة");
+    drawTripleColumn(ctx, y, "Date", saleInfo.date, "تاريخ الفاتورة");
     y += CANVAS_SETTINGS.lineHeight;
-    drawTripleColumn(ctx, y, "", time, "");
-    // drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Date", saleInfo.date_time, "تاريخ الفاتورة");
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Type", saleInfo.order_type, "نوع الطلب");
-    if(saleInfo.orders_table_text != '') {
-        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Table Name", saleInfo.orders_table_text, "اسم الجدول");
-    }
-    if(saleInfo.order_type == 'Delivery') {
+    drawTripleColumn(ctx, y, "", saleInfo.time_inv, "");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Type", saleInfo.sale_type, "نوع الطلب");
+    y += CANVAS_SETTINGS.lineHeight;
+    if(saleInfo.sale_type == 'Delivery') {
+        drawTripleColumn(ctx, y, "", saleInfo.delivery_partner_name, "");
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Reference No", saleInfo.delivery_partner_ref_no, "الرقم المرجعي");
+        y += CANVAS_SETTINGS.lineHeight;
     }
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Number", saleInfo.order_no, "رقم الطلب");
+    if(saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
+        // Customer label
+        ctx.fillStyle = "#ccc";
+        ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
+        ctx.fillStyle = "black";
+        drawText("Customer Detail / تفاصيل العميل", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
+        if(saleInfo.customer_name && saleInfo.customer_name != '') {
+            drawText(saleInfo.customer_name, CANVAS_SETTINGS.smallFontSize, 'center');
+        }
+        if(saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
+            drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "TRN", saleInfo.customer_trn_number, "الرقم الضريبي");
+        }
+    }
     y += 10;
 
     // Header separator
@@ -777,39 +798,34 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage) => {
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Tax", saleInfo.tax_amt, "قيمة الضريبة", CANVAS_SETTINGS.mediumFontSize);
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Grand Total", saleInfo.total_payable, "المبلغ الإجمالي", CANVAS_SETTINGS.mediumFontSize);
 
-    // Header separator
-    drawLine(ctx, y += 5);
-    y += 20;
+    // Payment
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.fillStyle = "#eee";
+    ctx.fillRect(0, y += 10, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight + 5);
+    ctx.fillStyle = "black";
 
     y += CANVAS_SETTINGS.lineHeight;
-    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-    ctx.textAlign = "center";
-    let lineCount = wrapText(
-        ctx,
-        `هذه مسودة فاتورة أولية، يرجى استلام الفاتورة الأصلية من أمين الصندوق`,
-        centerX,
-        y,
-        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-        CANVAS_SETTINGS.lineHeight
-    );
-
-    // move y down according to wrapped lines
-    y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+    ctx.textAlign = "left";
+    ctx.fillText(`Paid by: ${saleInfo.payments}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
 
     y += CANVAS_SETTINGS.lineHeight;
-    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-    ctx.textAlign = "center";
-    lineCount = wrapText(
-        ctx,
-        `This is a primary draft invoice, please collect original invoice from cashier`,
-        centerX,
-        y,
-        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-        CANVAS_SETTINGS.lineHeight
-    );
 
-    // move y down according to wrapped lines
-    y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+    ctx.textAlign = "left";
+    ctx.fillText(`Amount: ${saleInfo.given_amount}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
+
+    ctx.textAlign = "right";
+    ctx.fillText(
+        `Change: ${saleInfo.change_amount}`,
+        CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX,
+        y + CANVAS_SETTINGS.lineHeight / 2 + 5
+    );
+    y += CANVAS_SETTINGS.lineHeight + 15;
+
+    // QR code
+    if (qrCodeImage) {
+        ctx.drawImage(qrCodeImage, (CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.qrCodeSize) / 2, y, CANVAS_SETTINGS.qrCodeSize, CANVAS_SETTINGS.qrCodeSize);
+        y += CANVAS_SETTINGS.qrCodeSize + 10;
+    }
 
     y += CANVAS_SETTINGS.lineHeight;
     ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
@@ -878,12 +894,35 @@ function getWrappedLineCount(ctx, text, maxWidth) {
 }
 
 // Util: Draw LTR and RTL aligned fields
-const drawTripleColumn = (ctx, y, left, center, right, fontSize = CANVAS_SETTINGS.smallFontSize) => {
-    const colWidth = CANVAS_SETTINGS.canvasWidth / 3;
+const drawTripleColumn = (
+    ctx,
+    y,
+    left,
+    center,
+    right,
+    fontSize = CANVAS_SETTINGS.smallFontSize
+) => {
+
+    const totalWidth = CANVAS_SETTINGS.canvasWidth;
+
+    // Column widths in percentage
+    const leftWidth   = totalWidth * 0.30;  // 30%
+    const centerWidth = totalWidth * 0.40;  // 40%
+    const rightWidth  = totalWidth * 0.40;  // 40%
+
     ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = "right"; ctx.fillText(left, colWidth - 5, y);
-    ctx.textAlign = "center"; ctx.fillText(center, colWidth * 1.5, y);
-    ctx.textAlign = "left"; ctx.fillText(right, colWidth * 2 + 5, y);
+
+    // LEFT (align right inside its 30% area)
+    ctx.textAlign = "right";
+    ctx.fillText(left, leftWidth - 5, y);
+
+    // CENTER (align center inside its 40% area)
+    ctx.textAlign = "center";
+    ctx.fillText(center, leftWidth + (centerWidth / 2), y);
+
+    // RIGHT (align left inside its 40% area)
+    ctx.textAlign = "left";
+    ctx.fillText(right, leftWidth + centerWidth + 5, y);
 };
 
 // Util: Load image with fallback
