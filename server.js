@@ -180,16 +180,6 @@ app.post('/reztra-bill', async (req, res) => {
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
         
-            if (item.note) {
-                tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
-                const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
-                const lineCount = getWrappedLineCount(tempCtx, `Note: ${item.note}`, maxWidth);
-            
-                // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
-                canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
-            }
-        
             if (item.modifiers_name) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
             
@@ -279,16 +269,6 @@ app.post('/reztra-invoice', async (req, res) => {
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
         
-            if (item.note) {
-                tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
-                const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
-                const lineCount = getWrappedLineCount(tempCtx, `Note: ${item.note}`, maxWidth);
-            
-                // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
-                canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
-            }
-        
             if (item.modifiers_name) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
             
@@ -304,6 +284,7 @@ app.post('/reztra-invoice', async (req, res) => {
         await drawInvoice(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
+        printer.openCashDrawer();
         await printer.execute();
         console.log(`Print command sent successfully!`);
         results.push({
@@ -478,12 +459,21 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     y += 15;
 
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Draft No", saleInfo.sale_no, "رقم الفاتورة");
+    // y += CANVAS_SETTINGS.lineHeight;
+    // const [date, time] = saleInfo.date_time.split(" ");
+    // drawTripleColumn(ctx, y, "Date", date, "تاريخ الفاتورة");
     y += CANVAS_SETTINGS.lineHeight;
-    const [date, time] = saleInfo.date_time.split(" ");
-    drawTripleColumn(ctx, y, "Date", date, "تاريخ الفاتورة");
-    y += CANVAS_SETTINGS.lineHeight;
-    drawTripleColumn(ctx, y, "", time, "");
-    // drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Date", saleInfo.date_time, "تاريخ الفاتورة");
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    lineCounts = wrapText(
+        ctx,
+        `Date: ${saleInfo.date_time} : تاريخ الفاتورة`,
+        centerX,
+        y,
+        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+        CANVAS_SETTINGS.lineHeight
+    );
+    // drawTripleColumn(ctx, y, "", time, "");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Type", saleInfo.order_type, "نوع الطلب");
     if(saleInfo.orders_table_text != '') {
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Table Name", saleInfo.orders_table_text, "اسم الجدول");
@@ -491,7 +481,7 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     if(saleInfo.order_type == 'Delivery') {
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Reference No", saleInfo.delivery_partner_ref_no, "الرقم المرجعي");
     }
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب", 28);
     y += 10;
 
     // Header separator
@@ -550,22 +540,6 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
-        }
-        if (item.note) {
-            y += CANVAS_SETTINGS.lineHeight;
-            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            ctx.textAlign = "left";
-            const lineCount = wrapText(
-                ctx,
-                `Note: ${item.note}`,
-                CANVAS_SETTINGS.paddingX,
-                y,
-                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-                CANVAS_SETTINGS.lineHeight
-            );
-        
-            // move y down according to wrapped lines
-            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
         }
     });
 
@@ -686,11 +660,21 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     y += 15;
 
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Invoice No", saleInfo.sale_no, "رقم الفاتورة");
+    // y += CANVAS_SETTINGS.lineHeight;
+    // drawTripleColumn(ctx, y, "Date", saleInfo.date, "تاريخ الفاتورة");
     y += CANVAS_SETTINGS.lineHeight;
-    drawTripleColumn(ctx, y, "Date", saleInfo.date, "تاريخ الفاتورة");
-    y += CANVAS_SETTINGS.lineHeight;
-    drawTripleColumn(ctx, y, "", saleInfo.time_inv, "");
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب");
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    lineCounts = wrapText(
+        ctx,
+        `Date: ${saleInfo.date} ${saleInfo.time_inv} : تاريخ الفاتورة`,
+        centerX,
+        y,
+        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+        CANVAS_SETTINGS.lineHeight
+    );
+    // drawTripleColumn(ctx, y, "", saleInfo.time_inv, "");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب", 28);
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Type", saleInfo.sale_type, "نوع الطلب");
     y += CANVAS_SETTINGS.lineHeight;
     if(saleInfo.sale_type == 'Delivery') {
@@ -769,22 +753,6 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
-        }
-        if (item.note) {
-            y += CANVAS_SETTINGS.lineHeight;
-            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            ctx.textAlign = "left";
-            const lineCount = wrapText(
-                ctx,
-                `Note: ${item.note}`,
-                CANVAS_SETTINGS.paddingX,
-                y,
-                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-                CANVAS_SETTINGS.lineHeight
-            );
-        
-            // move y down according to wrapped lines
-            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
         }
     });
 
