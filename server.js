@@ -180,11 +180,21 @@ app.post('/reztra-bill', async (req, res) => {
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
         
-            if (item.modifiers_name) {
+            if (item.modifiers) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
             
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
-                const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers_name}`, maxWidth);
+                const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
+            
+                // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+            }
+        
+            if (item.m_price) {
+                tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            
+                const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
             
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
@@ -269,11 +279,21 @@ app.post('/reztra-invoice', async (req, res) => {
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
         
-            if (item.modifiers_name) {
+            if (item.modifiers) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
             
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
-                const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers_name}`, maxWidth);
+                const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
+            
+                // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+            }
+        
+            if (item.m_price) {
+                tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            
+                const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
             
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
@@ -773,10 +793,22 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     ctx.fillStyle = "black";
 
     y += CANVAS_SETTINGS.lineHeight;
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
     ctx.textAlign = "left";
-    ctx.fillText(`Paid by: ${saleInfo.payments}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
 
-    y += CANVAS_SETTINGS.lineHeight;
+    const startX = CANVAS_SETTINGS.paddingX; // left side position
+
+    lineCounts = wrapText(
+        ctx,
+        `Paid by: ${saleInfo.payments}`,
+        startX,
+        y,
+        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+        CANVAS_SETTINGS.lineHeight
+    );
+
+    // move down based on wrapped lines
+    y += (lineCounts - 1) * CANVAS_SETTINGS.lineHeight;
 
     ctx.textAlign = "left";
     ctx.fillText(`Amount: ${saleInfo.given_amount}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
@@ -820,8 +852,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 
     for (let n = 0; n < words.length; n++) {
         const testLine = line + words[n] + ' ';
-        const metrics = ctx.measureText(testLine);
-        const testWidth = metrics.width;
+        const testWidth = ctx.measureText(testLine).width;
 
         if (testWidth > maxWidth && n > 0) {
             lines.push(line.trim());
@@ -832,14 +863,13 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     }
     lines.push(line.trim());
 
-    // Now draw each line
+    // Draw with left alignment
     lines.forEach((l, i) => {
         ctx.fillText(l, x, y + (i * lineHeight));
     });
 
     return lines.length;
 }
-
 
 function getWrappedLineCount(ctx, text, maxWidth) {
     const words = text.split(' ');
