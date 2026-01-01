@@ -270,11 +270,40 @@ app.post('/reztra-invoice', async (req, res) => {
         if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
             defaultHeight += 50
         }
-        
-        const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
         let canvasHeight = defaultHeight;
         const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const tempCtx = tempCanvas.getContext('2d');
+
+        const refundItems = Array.isArray(data.sale_info?.refund?.items) ? data.sale_info?.refund?.items : [];
+        if(refundItems.length > 0) {
+            canvasHeight += 100
+        
+            refundItems.forEach(item => {
+                canvasHeight += 110; // base height for every item
+            
+                if (item.modifiers) {
+                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+                
+                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                    const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
+                
+                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+                }
+            
+                if (item.m_price) {
+                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+                
+                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                    const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
+                
+                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+                }
+            });
+        }
+        
+        const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
         
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
@@ -820,6 +849,105 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
         y + CANVAS_SETTINGS.lineHeight / 2 + 5
     );
     y += CANVAS_SETTINGS.lineHeight + 15;
+
+    // Header separator
+    drawLine(ctx, y += 5);
+
+    const refundItems = Array.isArray(saleInfo.refund?.items) ? saleInfo.refund?.items : [];
+    if(refundItems.length > 0) {
+        // Refund label
+        y += 15;
+        ctx.fillStyle = "#ccc";
+        ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
+        ctx.fillStyle = "black";
+        drawText("REFUND / استرداد", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
+        y += 15;
+
+        // Header separator
+        drawLine(ctx, y += 5);
+
+        // Table Headers
+        ctx.font = `bold ${CANVAS_SETTINGS.mediumFontSize}px sans-serif`;
+        ctx.textAlign = "left"; ctx.fillText("Product", CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight);
+        ctx.textAlign = "right";
+        ctx.fillText("Price", CANVAS_SETTINGS.canvasWidth * 0.55, y + CANVAS_SETTINGS.lineHeight);
+        ctx.fillText("Qty", CANVAS_SETTINGS.canvasWidth * 0.75, y + CANVAS_SETTINGS.lineHeight);
+        ctx.fillText("Total", CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight);
+        y += CANVAS_SETTINGS.lineHeight;
+
+        drawLine(ctx, y += 5);
+
+        refundItems.forEach((item, i) => {
+            ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            ctx.textAlign = "right"; ctx.fillText(item.name2, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
+            ctx.textAlign = "left"; ctx.fillText(`${i + 1}. ${item.name}`, CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
+            ctx.textAlign = "right";
+            ctx.fillText(item.price, CANVAS_SETTINGS.canvasWidth * 0.55, y += CANVAS_SETTINGS.lineHeight);
+            ctx.fillText(item.qty, CANVAS_SETTINGS.canvasWidth * 0.75, y);
+            ctx.fillText(item.total, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
+            y += 10;
+            if (item.modifiers) {
+                y += CANVAS_SETTINGS.lineHeight;
+                ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+                ctx.textAlign = "left";
+                const lineCount = wrapText(
+                    ctx,
+                    `Modifiers: ${item.modifiers}`,
+                    CANVAS_SETTINGS.paddingX,
+                    y,
+                    CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                    CANVAS_SETTINGS.lineHeight
+                );
+            
+                // move y down according to wrapped lines
+                y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+                y += 10;
+            }
+            if (item.m_price) {
+                y += CANVAS_SETTINGS.lineHeight;
+                ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+                ctx.textAlign = "left";
+                const lineCount = wrapText(
+                    ctx,
+                    `Modifier Price: ${item.m_price}`,
+                    CANVAS_SETTINGS.paddingX,
+                    y,
+                    CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                    CANVAS_SETTINGS.lineHeight
+                );
+            
+                // move y down according to wrapped lines
+                y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+                y += 10;
+            }
+        });
+
+        y += 30;
+
+        // Header separator
+        drawLine(ctx, y += 5);
+        y += 10;
+
+        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.refund.total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
+
+        y += CANVAS_SETTINGS.lineHeight;
+        ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+        ctx.textAlign = "left";
+
+        const startXs = CANVAS_SETTINGS.paddingX; // left side position
+
+        lineCounts = wrapText(
+            ctx,
+            `Paid by: ${saleInfo.refund.payment}`,
+            startXs,
+            y,
+            CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+            CANVAS_SETTINGS.lineHeight
+        );
+
+        // move down based on wrapped lines
+        y += (lineCounts - 1) * CANVAS_SETTINGS.lineHeight;
+    }
 
     // QR code
     if (qrCodeImage) {
