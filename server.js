@@ -949,6 +949,8 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
         y += (lineCounts - 1) * CANVAS_SETTINGS.lineHeight;
     }
 
+    y += CANVAS_SETTINGS.lineHeight;
+
     // QR code
     if (qrCodeImage) {
         ctx.drawImage(qrCodeImage, (CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.qrCodeSize) / 2, y, CANVAS_SETTINGS.qrCodeSize, CANVAS_SETTINGS.qrCodeSize);
