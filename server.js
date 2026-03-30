@@ -373,7 +373,9 @@ app.post('/reztra-invoice', async (req, res) => {
         await drawInvoice(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
-        printer.openCashDrawer();
+        if(data.sale_info.cash_drawer) {
+            printer.openCashDrawer();
+        }
         await printer.execute();
         console.log(`Print command sent successfully!`);
         results.push({
