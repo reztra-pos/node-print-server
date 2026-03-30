@@ -24,8 +24,48 @@ app.use((req, res, next) => {
     next();
 });
 // POST API
+app.post('/reztra-register', async (req, res) => {
+    const data = req.body;
+
+    let results = [];
+
+    let printInterface = '';
+    if (data.print_details.type == 'windows' && data.print_details.path !== '') {
+        printInterface = `//localhost/${data.print_details.path}`;
+    } else if (data.print_details.type == 'network' && data.print_details.printer_ip_address !== '') {
+        printInterface = `tcp://${data.print_details.printer_ip_address}:${data.print_details.printer_port ? data.print_details.printer_port : 9600}`;
+    } else {
+        console.error("Printer not connected:", data.print_details);
+        results.push({
+            message: 'printer type not defined!',
+            printer_info: data.print_details
+        });
+    }
+
+    try {
+        const printer = new ThermalPrinter({
+            type: PrinterTypes.EPSON,
+            interface: printInterface,
+        });
+
+        const buffer = Buffer.from(data.print_bytes, 'base64');
+
+        await printer.raw(buffer);
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`Print failed for kitchen ${key}:`, error);
+        results.push({
+            kitchen: key,
+            message: 'Print failed!',
+            error: error.message
+        });
+    }
+})
+
+// POST API
 app.post('/reztra-kot', async (req, res) => {
-    const data = req.body;   
+    const data = req.body;
 
     let results = [];
 
