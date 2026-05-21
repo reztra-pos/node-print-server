@@ -305,7 +305,7 @@ app.post('/reztra-invoice', async (req, res) => {
         ]);
 
         if (!logoImage) defaultHeight -= 350;
-        if (!qrCodeImage) defaultHeight -= 250;
+        if (!qrCodeImage || !data.sale_info.tax_collect) defaultHeight -= 250;
 
         if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
             defaultHeight += 50
@@ -419,7 +419,7 @@ const CANVAS_SETTINGS = {
     headerFontSize: 34,
     paddingX: 10,
     logoHeight: 300,
-    qrCodeSize: 260
+    qrCodeSize: 300
 };
 
 const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
@@ -520,7 +520,9 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     drawText(saleInfo.firm_name_2, CANVAS_SETTINGS.headerFontSize, 'center');
 
     y += 10;
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
+    if(saleInfo.tax_collect) {
+        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
+    }
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "CR NO", saleInfo.cr_no, "رقم السجل");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "PHONE NO", saleInfo.phone, "رقم الهاتف");
 
@@ -721,7 +723,9 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     drawText(saleInfo.firm_name_2, CANVAS_SETTINGS.headerFontSize, 'center');
 
     y += 10;
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
+    if(saleInfo.tax_collect) {
+        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
+    }
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "CR NO", saleInfo.cr_no, "رقم السجل");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "PHONE NO", saleInfo.phone, "رقم الهاتف");
 
@@ -994,7 +998,7 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     y += CANVAS_SETTINGS.lineHeight;
 
     // QR code
-    if (qrCodeImage) {
+    if (qrCodeImage && saleInfo.tax_collect) {
         ctx.drawImage(qrCodeImage, (CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.qrCodeSize) / 2, y, CANVAS_SETTINGS.qrCodeSize, CANVAS_SETTINGS.qrCodeSize);
         y += CANVAS_SETTINGS.qrCodeSize + 10;
     }
