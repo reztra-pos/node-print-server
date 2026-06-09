@@ -305,7 +305,7 @@ app.post('/reztra-invoice', async (req, res) => {
         ]);
 
         if (!logoImage) defaultHeight -= 350;
-        if (!qrCodeImage || !data.sale_info.tax_collect) defaultHeight -= 250;
+        if (!qrCodeImage) defaultHeight -= 250;
 
         if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
             defaultHeight += 50
@@ -313,35 +313,6 @@ app.post('/reztra-invoice', async (req, res) => {
         let canvasHeight = defaultHeight;
         const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const tempCtx = tempCanvas.getContext('2d');
-
-        const refundItems = Array.isArray(data.sale_info?.refund?.items) ? data.sale_info?.refund?.items : [];
-        if(refundItems.length > 0) {
-            canvasHeight += 100
-        
-            refundItems.forEach(item => {
-                canvasHeight += 110; // base height for every item
-            
-                if (item.modifiers) {
-                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-                
-                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
-                    const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
-                
-                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
-                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
-                }
-            
-                if (item.m_price) {
-                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-                
-                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
-                    const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
-                
-                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
-                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
-                }
-            });
-        }
         
         const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
         
@@ -376,6 +347,99 @@ app.post('/reztra-invoice', async (req, res) => {
         if(data.sale_info.cash_drawer) {
             printer.openCashDrawer();
         }
+        await printer.execute();
+        console.log(`Print command sent successfully!`);
+        results.push({
+            message: 'Print successful!',
+            interface: printInterface
+        });
+    } catch (error) {
+        console.error(`Print failed:`, error);
+        results.push({
+            message: 'Print failed!',
+            error: error.message
+        });
+    }
+
+    // ✅ Send response once after loop
+    res.json({
+        message: 'Printing completed',
+        results
+    });
+});
+
+app.post('/reztra-refund', async (req, res) => {
+    const data = req.body;   
+
+    let results = [];
+
+    let printInterface = '';
+    if (data.print_details.type == 'windows' && data.print_details.path !== '') {
+        printInterface = `//localhost/${data.print_details.path}`;
+    } else if (data.print_details.type == 'network' && data.print_details.printer_ip_address !== '') {
+        printInterface = `tcp://${data.print_details.printer_ip_address}:${data.print_details.printer_port ? data.print_details.printer_port : 9600}`;
+    } else {
+        console.error("Printer not connected:", data.print_details);
+        results.push({
+            message: 'printer type not defined!',
+            printer_info: data.print_details
+        });
+    }
+    let printer = new ThermalPrinter({
+        type: PrinterTypes.EPSON,
+        interface: printInterface
+    });
+    try {
+        let defaultHeight = 1550;
+
+        const base64Data = data.sale_info?.qr_code?.replace(/^data:image\/png;base64,/, "");
+        fs.writeFileSync("qr.png", base64Data, "base64");
+
+        const [logoImage, qrCodeImage] = await Promise.all([
+            loadImageSafe(data.sale_info.invoice_logo, 'Logo'),
+            loadImageSafe('qr.png', 'QR Code')
+        ]);
+
+        if (!logoImage) defaultHeight -= 350;
+        if (!qrCodeImage) defaultHeight -= 250;
+
+        if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
+            defaultHeight += 50
+        }
+        let canvasHeight = defaultHeight;
+        const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
+        
+        items.forEach(item => {
+            canvasHeight += 110; // base height for every item
+        
+            if (item.modifiers) {
+                tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            
+                const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
+            
+                // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+            }
+        
+            if (item.m_price) {
+                tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            
+                const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
+            
+                // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+            }
+        });
+        const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
+        const ctx = canvas.getContext("2d");
+        await drawRefund(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
+        await printer.printImageBuffer(canvas.toBuffer('image/png'));
+        printer.cut();
         await printer.execute();
         console.log(`Print command sent successfully!`);
         results.push({
@@ -520,9 +584,7 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     drawText(saleInfo.firm_name_2, CANVAS_SETTINGS.headerFontSize, 'center');
 
     y += 10;
-    if(saleInfo.tax_collect) {
-        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
-    }
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "CR NO", saleInfo.cr_no, "رقم السجل");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "PHONE NO", saleInfo.phone, "رقم الهاتف");
 
@@ -642,9 +704,9 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     drawLine(ctx, y += 5);
     y += 10;
 
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.sub_total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Tax", saleInfo.tax_amt, "قيمة الضريبة", CANVAS_SETTINGS.mediumFontSize);
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Grand Total", saleInfo.total_payable, "المبلغ الإجمالي", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.sub_total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Tax", saleInfo.tax_amt, "قيمة الضريبة", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Grand Total", saleInfo.total_payable, "المبلغ الإجمالي", CANVAS_SETTINGS.mediumFontSize);
 
     // Header separator
     drawLine(ctx, y += 5);
@@ -723,9 +785,7 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     drawText(saleInfo.firm_name_2, CANVAS_SETTINGS.headerFontSize, 'center');
 
     y += 10;
-    if(saleInfo.tax_collect) {
-        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
-    }
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "CR NO", saleInfo.cr_no, "رقم السجل");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "PHONE NO", saleInfo.phone, "رقم الهاتف");
 
@@ -857,9 +917,9 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     drawLine(ctx, y += 5);
     y += 10;
 
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.sub_total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Tax", saleInfo.tax_amt, "قيمة الضريبة", CANVAS_SETTINGS.mediumFontSize);
-    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Grand Total", saleInfo.total_payable, "المبلغ الإجمالي", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.sub_total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Tax", saleInfo.tax_amt, "قيمة الضريبة", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Grand Total", saleInfo.total_payable, "المبلغ الإجمالي", CANVAS_SETTINGS.mediumFontSize);
 
     // Payment
     ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
@@ -899,106 +959,254 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     // Header separator
     drawLine(ctx, y += 5);
 
-    const refundItems = Array.isArray(saleInfo.refund?.items) ? saleInfo.refund?.items : [];
-    if(refundItems.length > 0) {
-        // Refund label
-        y += 15;
+    y += CANVAS_SETTINGS.lineHeight;
+
+    // QR code
+    if (qrCodeImage) {
+        ctx.drawImage(qrCodeImage, (CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.qrCodeSize) / 2, y, CANVAS_SETTINGS.qrCodeSize, CANVAS_SETTINGS.qrCodeSize);
+        y += CANVAS_SETTINGS.qrCodeSize + 10;
+    }
+
+    y += CANVAS_SETTINGS.lineHeight;
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    lineCount = wrapText(
+        ctx,
+        saleInfo.invoice_footer,
+        centerX,
+        y,
+        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+        CANVAS_SETTINGS.lineHeight
+    );
+
+    // move y down according to wrapped lines
+    y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+
+    return y;
+};
+
+const drawRefund = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
+    let y = 0;
+
+    const drawText = (text, size, align = 'center', offsetY = CANVAS_SETTINGS.lineHeight, bold = false) => {
+        ctx.font = `${bold ? 'bold ' : ''}${size}px sans-serif`;
+        ctx.textAlign = align;
+        ctx.fillText(text, CANVAS_SETTINGS.canvasWidth / 2, y += offsetY);
+    };
+
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'black';
+
+    // Logo
+    if (logoImage) {
+        const scale = CANVAS_SETTINGS.logoHeight / logoImage.height;
+        const logoX = (CANVAS_SETTINGS.canvasWidth - logoImage.width * scale) / 2;
+        ctx.drawImage(logoImage, logoX, y, logoImage.width * scale, CANVAS_SETTINGS.logoHeight);
+        y += CANVAS_SETTINGS.logoHeight + 5;
+    }
+
+    drawText(saleInfo.firm_name_1, CANVAS_SETTINGS.headerFontSize, 'center');
+    drawText(saleInfo.firm_name_2, CANVAS_SETTINGS.headerFontSize, 'center');
+
+    y += 10;
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "VAT NO", saleInfo.vat_no, "الرقم الضريبي");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "CR NO", saleInfo.cr_no, "رقم السجل");
+    drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "PHONE NO", saleInfo.phone, "رقم الهاتف");
+
+    let centerX = CANVAS_SETTINGS.canvasWidth / 2;
+
+    y += CANVAS_SETTINGS.lineHeight;
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    let lineCounts = wrapText(
+        ctx,
+        saleInfo.address,
+        centerX,
+        y,
+        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+        CANVAS_SETTINGS.lineHeight
+    );
+
+    // move y down according to wrapped lines
+    y += (lineCounts - 1) * CANVAS_SETTINGS.lineHeight;
+    y += 20;
+
+    // Invoice label
+    ctx.fillStyle = "#ccc";
+    ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
+    ctx.fillStyle = "black";
+    drawText("Simplified Credit Note / اشعار دائن مبسطة", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
+    y += 15;
+    y += 15;
+
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+
+    ctx.textAlign = "left";
+    ctx.fillText(`${saleInfo.refund_no}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
+
+    ctx.textAlign = "right";
+    ctx.fillText(
+        `رقم اشعار دائن`,
+        CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX,
+        y + CANVAS_SETTINGS.lineHeight / 2 + 5
+    );
+    y += CANVAS_SETTINGS.lineHeight + 15;
+
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+
+    ctx.textAlign = "left";
+    ctx.fillText(`${saleInfo.refund_date} ${saleInfo.refund_time_inv}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
+
+    ctx.textAlign = "right";
+    ctx.fillText(
+        `تاریخ اشعار دائن`,
+        CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX,
+        y + CANVAS_SETTINGS.lineHeight / 2 + 5
+    );
+    y += CANVAS_SETTINGS.lineHeight + 15;
+
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+
+    ctx.textAlign = "left";
+    ctx.fillText(`${saleInfo.sale_no}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
+
+    ctx.textAlign = "right";
+    ctx.fillText(
+        `رﻗم اﻟﻔﺎﺗورة اﻷﺻﻠﯾﺔ`,
+        CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX,
+        y + CANVAS_SETTINGS.lineHeight / 2 + 5
+    );
+    y += CANVAS_SETTINGS.lineHeight + 15;
+
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+
+    ctx.textAlign = "left";
+    ctx.fillText(`${saleInfo.date} ${saleInfo.time_inv}`, CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight / 2 + 5);
+
+    ctx.textAlign = "right";
+    ctx.fillText(
+        `ﺗﺎرﯾﺦ اﻟﻔﺎﺗورة اﻷﺻﻠﯾﺔ`,
+        CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX,
+        y + CANVAS_SETTINGS.lineHeight / 2 + 5
+    );
+    y += CANVAS_SETTINGS.lineHeight + 15;
+    
+    if(saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
+        // Customer label
         ctx.fillStyle = "#ccc";
         ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
         ctx.fillStyle = "black";
-        drawText("REFUND / استرداد", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
-        y += 15;
-
-        // Header separator
-        drawLine(ctx, y += 5);
-
-        // Table Headers
-        ctx.font = `bold ${CANVAS_SETTINGS.mediumFontSize}px sans-serif`;
-        ctx.textAlign = "left"; ctx.fillText("Product", CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight);
-        ctx.textAlign = "right";
-        ctx.fillText("Price", CANVAS_SETTINGS.canvasWidth * 0.55, y + CANVAS_SETTINGS.lineHeight);
-        ctx.fillText("Qty", CANVAS_SETTINGS.canvasWidth * 0.75, y + CANVAS_SETTINGS.lineHeight);
-        ctx.fillText("Total", CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight);
-        y += CANVAS_SETTINGS.lineHeight;
-
-        drawLine(ctx, y += 5);
-
-        refundItems.forEach((item, i) => {
-            ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            ctx.textAlign = "right"; ctx.fillText(item.name2, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
-            ctx.textAlign = "left"; ctx.fillText(`${i + 1}. ${item.name}`, CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
-            ctx.textAlign = "right";
-            ctx.fillText(item.price, CANVAS_SETTINGS.canvasWidth * 0.55, y += CANVAS_SETTINGS.lineHeight);
-            ctx.fillText(item.qty, CANVAS_SETTINGS.canvasWidth * 0.75, y);
-            ctx.fillText(item.total, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
-            y += 10;
-            if (item.modifiers) {
-                y += CANVAS_SETTINGS.lineHeight;
-                ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-                ctx.textAlign = "left";
-                const lineCount = wrapText(
-                    ctx,
-                    `Modifiers: ${item.modifiers}`,
-                    CANVAS_SETTINGS.paddingX,
-                    y,
-                    CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-                    CANVAS_SETTINGS.lineHeight
-                );
-            
-                // move y down according to wrapped lines
-                y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
-                y += 10;
-            }
-            if (item.m_price) {
-                y += CANVAS_SETTINGS.lineHeight;
-                ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-                ctx.textAlign = "left";
-                const lineCount = wrapText(
-                    ctx,
-                    `Modifier Price: ${item.m_price}`,
-                    CANVAS_SETTINGS.paddingX,
-                    y,
-                    CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-                    CANVAS_SETTINGS.lineHeight
-                );
-            
-                // move y down according to wrapped lines
-                y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
-                y += 10;
-            }
-        });
-
-        y += 30;
-
-        // Header separator
-        drawLine(ctx, y += 5);
-        y += 10;
-
-        drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.refund.total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
-
-        y += CANVAS_SETTINGS.lineHeight;
-        ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-        ctx.textAlign = "left";
-
-        const startXs = CANVAS_SETTINGS.paddingX; // left side position
-
-        lineCounts = wrapText(
-            ctx,
-            `Paid by: ${saleInfo.refund.payment}`,
-            startXs,
-            y,
-            CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
-            CANVAS_SETTINGS.lineHeight
-        );
-
-        // move down based on wrapped lines
-        y += (lineCounts - 1) * CANVAS_SETTINGS.lineHeight;
+        drawText("Customer Detail / تفاصيل العميل", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
+        if(saleInfo.customer_name && saleInfo.customer_name != '') {
+            drawText(saleInfo.customer_name, CANVAS_SETTINGS.smallFontSize, 'center');
+        }
+        if(saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
+            drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "TRN", saleInfo.customer_trn_number, "الرقم الضريبي");
+        }
     }
+    y += 10;
+
+    // Header separator
+    drawLine(ctx, y += 5);
+
+    // Table Headers
+    ctx.font = `bold ${CANVAS_SETTINGS.mediumFontSize}px sans-serif`;
+    ctx.textAlign = "left"; ctx.fillText("Product", CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight);
+    ctx.textAlign = "right";
+    ctx.fillText("Price", CANVAS_SETTINGS.canvasWidth * 0.55, y + CANVAS_SETTINGS.lineHeight);
+    ctx.fillText("Qty", CANVAS_SETTINGS.canvasWidth * 0.75, y + CANVAS_SETTINGS.lineHeight);
+    ctx.fillText("Total", CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y + CANVAS_SETTINGS.lineHeight);
+    y += CANVAS_SETTINGS.lineHeight;
+
+    drawLine(ctx, y += 5);
+
+    saleInfo.items.forEach((item, i) => {
+        ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+        ctx.textAlign = "right"; ctx.fillText(item.name2, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
+        ctx.textAlign = "left"; ctx.fillText(`${i + 1}. ${item.name}`, CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
+        ctx.textAlign = "right";
+        ctx.fillText(item.price, CANVAS_SETTINGS.canvasWidth * 0.55, y += CANVAS_SETTINGS.lineHeight);
+        ctx.fillText(item.qty, CANVAS_SETTINGS.canvasWidth * 0.75, y);
+        ctx.fillText(item.total, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
+        y += 10;
+        if (item.modifiers) {
+            y += CANVAS_SETTINGS.lineHeight;
+            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            ctx.textAlign = "left";
+            const lineCount = wrapText(
+                ctx,
+                `Modifiers: ${item.modifiers}`,
+                CANVAS_SETTINGS.paddingX,
+                y,
+                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                CANVAS_SETTINGS.lineHeight
+            );
+        
+            // move y down according to wrapped lines
+            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+            y += 10;
+        }
+        if (item.m_price) {
+            y += CANVAS_SETTINGS.lineHeight;
+            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            ctx.textAlign = "left";
+            const lineCount = wrapText(
+                ctx,
+                `Modifier Price: ${item.m_price}`,
+                CANVAS_SETTINGS.paddingX,
+                y,
+                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                CANVAS_SETTINGS.lineHeight
+            );
+        
+            // move y down according to wrapped lines
+            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+            y += 10;
+        }
+    });
+
+    y += 30;
+
+    // Header separator
+    drawLine(ctx, y += 5);
+    y += 10;
+
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Total", saleInfo.sub_total, "الإجمالي بدون ضريبة", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Tax", saleInfo.tax_amt, "قيمة الضريبة", CANVAS_SETTINGS.mediumFontSize);
+    drawTripleColumnWideRight(ctx, y += CANVAS_SETTINGS.lineHeight, "Grand Total", saleInfo.total_payable, "المبلغ الإجمالي", CANVAS_SETTINGS.mediumFontSize);
+
+    // Payment
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.fillStyle = "#eee";
+    ctx.fillRect(0, y += 10, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight + 5);
+    ctx.fillStyle = "black";
+
+    y += CANVAS_SETTINGS.lineHeight;
+    ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+    ctx.textAlign = "left";
+
+    const startX = CANVAS_SETTINGS.paddingX; // left side position
+
+    lineCounts = wrapText(
+        ctx,
+        `Paid by: ${saleInfo.payments}`,
+        startX,
+        y,
+        CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+        CANVAS_SETTINGS.lineHeight
+    );
+
+    // move down based on wrapped lines
+    y += (lineCounts - 1) * CANVAS_SETTINGS.lineHeight;
+
+    // Header separator
+    drawLine(ctx, y += 5);
 
     y += CANVAS_SETTINGS.lineHeight;
 
     // QR code
-    if (qrCodeImage && saleInfo.tax_collect) {
+    if (qrCodeImage) {
         ctx.drawImage(qrCodeImage, (CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.qrCodeSize) / 2, y, CANVAS_SETTINGS.qrCodeSize, CANVAS_SETTINGS.qrCodeSize);
         y += CANVAS_SETTINGS.qrCodeSize + 10;
     }
@@ -1097,6 +1305,44 @@ const drawTripleColumn = (
     // RIGHT (align left inside its 40% area)
     ctx.textAlign = "left";
     ctx.fillText(right, leftWidth + centerWidth + 5, y);
+};
+
+const drawTripleColumnWideRight = (
+    ctx,
+    y,
+    left,
+    center,
+    right,
+    fontSize = CANVAS_SETTINGS.smallFontSize
+) => {
+
+    const totalWidth = CANVAS_SETTINGS.canvasWidth;
+
+    // Adjusted widths for longer Arabic text
+    const leftWidth   = totalWidth * 0.30;
+    const centerWidth = totalWidth * 0.25;
+    const rightWidth  = totalWidth * 0.45;
+
+    ctx.font = `${fontSize}px sans-serif`;
+
+    // LEFT
+    ctx.textAlign = "right";
+    ctx.fillText(left, leftWidth - 5, y);
+
+    // CENTER
+    ctx.textAlign = "center";
+    ctx.fillText(center, leftWidth + (centerWidth / 2), y);
+
+    // RIGHT
+    ctx.textAlign = "right";
+    ctx.direction = "rtl";
+    ctx.fillText(
+        right,
+        totalWidth - 5,
+        y
+    );
+
+    ctx.direction = "ltr";
 };
 
 // Util: Load image with fallback
