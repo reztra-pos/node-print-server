@@ -86,6 +86,7 @@ app.post('/print-server', async (req, res) => {
 
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
+        printer.openCashDrawer();
 
         const result = await printer.execute();
         console.log("Print command sent successfully!");
