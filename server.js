@@ -9,6 +9,9 @@ const app = express();
 const port = 4313;
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
+const path = require('path');
+const invoiceDir = path.join(__dirname, 'invoices');
+
 // Middleware to parse JSON body
 app.use(express.json());
 app.use(cors())
@@ -92,10 +95,10 @@ app.post('/reztra-kot', async (req, res) => {
 
         try {
             let defaultHeight = 180;
-            if(data.sale_type == 'Delivery') {
+            if (data.sale_type == 'Delivery') {
                 defaultHeight += 30
             }
-            if(data.sale_type == 'Dine In') {
+            if (data.sale_type == 'Dine In') {
                 defaultHeight += 30
             }
 
@@ -118,26 +121,36 @@ app.post('/reztra-kot', async (req, res) => {
 
             const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
             const tempCtx = tempCanvas.getContext('2d');
-            
+
             items.forEach(item => {
                 canvasHeight += 85; // base height for every item
-            
+
                 if (item.note) {
                     tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-                
+
                     const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                     const lineCount = getWrappedLineCount(tempCtx, `Note: ${item.note}`, maxWidth);
-                
+
                     // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                     canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
                 }
-            
+
                 if (item.modifiers_name) {
                     tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-                
+
                     const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                     const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers_name}`, maxWidth);
-                
+
+                    // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
+                    canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
+                }
+
+                if (item.combo_names) {
+                    tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+
+                    const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
+                    const lineCount = getWrappedLineCount(tempCtx, `Combos: ${item.combo_names}`, maxWidth);
+
                     // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                     canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
                 }
@@ -145,8 +158,13 @@ app.post('/reztra-kot', async (req, res) => {
 
             const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
             const ctx = canvas.getContext("2d");
-
             await drawKot(canvas, ctx, saleInfo, kitchen);
+
+            const imagePath = saveCanvasImage(
+                canvas,
+                'kots',
+                `${kitchen.kitchen_name}.png`
+            );
 
             await printer.printImageBuffer(canvas.toBuffer('image/png'));
             printer.cut();
@@ -177,7 +195,7 @@ app.post('/reztra-kot', async (req, res) => {
 });
 
 app.post('/reztra-bill', async (req, res) => {
-    const data = req.body;   
+    const data = req.body;
 
     let results = [];
 
@@ -199,10 +217,10 @@ app.post('/reztra-bill', async (req, res) => {
     });
     try {
         let defaultHeight = 1250;
-        if(data.sale_info.order_type == 'Delivery') {
+        if (data.sale_info.order_type == 'Delivery') {
             defaultHeight += 30
         }
-        if(data.sale_info.order_type == 'Dine In') {
+        if (data.sale_info.order_type == 'Dine In') {
             defaultHeight += 30
         }
 
@@ -211,31 +229,31 @@ app.post('/reztra-bill', async (req, res) => {
         ]);
 
         if (!logoImage) defaultHeight -= 350;
-        
+
         const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
         let canvasHeight = defaultHeight;
         const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const tempCtx = tempCanvas.getContext('2d');
-        
+
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
-        
+
             if (item.modifiers) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
-        
+
             if (item.m_price) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
@@ -243,6 +261,13 @@ app.post('/reztra-bill', async (req, res) => {
         const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const ctx = canvas.getContext("2d");
         await drawBill(canvas, ctx, data.sale_info, logoImage);
+
+        const imagePath = saveCanvasImage(
+            canvas,
+            'bills',
+            `${data.sale_info.sale_no}.png`
+        );
+
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
         await printer.execute();
@@ -267,7 +292,7 @@ app.post('/reztra-bill', async (req, res) => {
 });
 
 app.post('/reztra-invoice', async (req, res) => {
-    const data = req.body;   
+    const data = req.body;
 
     let results = [];
 
@@ -289,10 +314,10 @@ app.post('/reztra-invoice', async (req, res) => {
     });
     try {
         let defaultHeight = 1550;
-        if(data.sale_info.order_type == 'Delivery') {
+        if (data.sale_info.order_type == 'Delivery') {
             defaultHeight += 30
         }
-        if(data.sale_info.order_type == 'Dine In') {
+        if (data.sale_info.order_type == 'Dine In') {
             defaultHeight += 30
         }
 
@@ -307,34 +332,34 @@ app.post('/reztra-invoice', async (req, res) => {
         if (!logoImage) defaultHeight -= 350;
         if (!qrCodeImage) defaultHeight -= 250;
 
-        if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
+        if (data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
             defaultHeight += 50
         }
         let canvasHeight = defaultHeight;
         const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const tempCtx = tempCanvas.getContext('2d');
-        
+
         const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
-        
+
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
-        
+
             if (item.modifiers) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
-        
+
             if (item.m_price) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
@@ -342,9 +367,16 @@ app.post('/reztra-invoice', async (req, res) => {
         const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const ctx = canvas.getContext("2d");
         await drawInvoice(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
+
+        const imagePath = saveCanvasImage(
+            canvas,
+            'invoices',
+            `${data.sale_info.sale_no}.png`
+        );
+
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
-        if(data.sale_info.cash_drawer) {
+        if (data.sale_info.cash_drawer) {
             printer.openCashDrawer();
         }
         await printer.execute();
@@ -369,7 +401,7 @@ app.post('/reztra-invoice', async (req, res) => {
 });
 
 app.post('/reztra-refund', async (req, res) => {
-    const data = req.body;   
+    const data = req.body;
 
     let results = [];
 
@@ -403,34 +435,34 @@ app.post('/reztra-refund', async (req, res) => {
         if (!logoImage) defaultHeight -= 350;
         if (!qrCodeImage) defaultHeight -= 250;
 
-        if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
+        if (data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
             defaultHeight += 50
         }
         let canvasHeight = defaultHeight;
         const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const tempCtx = tempCanvas.getContext('2d');
-        
+
         const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
-        
+
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
-        
+
             if (item.modifiers) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
-        
+
             if (item.m_price) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
@@ -438,6 +470,13 @@ app.post('/reztra-refund', async (req, res) => {
         const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const ctx = canvas.getContext("2d");
         await drawRefund(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
+
+        const imagePath = saveCanvasImage(
+            canvas,
+            'refunds',
+            `${data.sale_info.sale_no}.png`
+        );
+
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
         await printer.execute();
@@ -462,7 +501,7 @@ app.post('/reztra-refund', async (req, res) => {
 });
 
 app.post('/reztra-debit', async (req, res) => {
-    const data = req.body;   
+    const data = req.body;
 
     let results = [];
 
@@ -496,34 +535,34 @@ app.post('/reztra-debit', async (req, res) => {
         if (!logoImage) defaultHeight -= 350;
         if (!qrCodeImage) defaultHeight -= 250;
 
-        if(data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
+        if (data.sale_info.customer_id && data.sale_info.customer_id != 1 && data.sale_info.sale_type != 'Delivery') {
             defaultHeight += 50
         }
         let canvasHeight = defaultHeight;
         const tempCanvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const tempCtx = tempCanvas.getContext('2d');
-        
+
         const items = Array.isArray(data.sale_info.items) ? data.sale_info.items : [];
-        
+
         items.forEach(item => {
             canvasHeight += 110; // base height for every item
-        
+
             if (item.modifiers) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifiers: ${item.modifiers}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
-        
+
             if (item.m_price) {
                 tempCtx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
-            
+
                 const maxWidth = CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2);
                 const lineCount = getWrappedLineCount(tempCtx, `Modifier Price: ${item.m_price}`, maxWidth);
-            
+
                 // add extra height for wrapped lines (1 line already covered in base 85, so add only the rest)
                 canvasHeight += (lineCount * CANVAS_SETTINGS.lineHeight);
             }
@@ -531,6 +570,13 @@ app.post('/reztra-debit', async (req, res) => {
         const canvas = createCanvas(CANVAS_SETTINGS.canvasWidth, canvasHeight);
         const ctx = canvas.getContext("2d");
         await drawDebit(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
+
+        const imagePath = saveCanvasImage(
+            canvas,
+            'debits',
+            `${data.sale_info.sale_no}.png`
+        );
+
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
         await printer.execute();
@@ -595,7 +641,7 @@ const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
     drawText(`KOT: ${kitchen.kitchen_name}`, CANVAS_SETTINGS.headerFontSize, 'center');
     drawText(`Order Type: ${saleInfo.sale_type}`, CANVAS_SETTINGS.headerFontSize, 'center');
     drawText(`Order No: ${saleInfo.order_no}`, CANVAS_SETTINGS.headerFontSize, 'center');
-    if(saleInfo.sale_type == 'Dine In') {
+    if (saleInfo.sale_type == 'Dine In') {
         drawText(`Table Name: ${saleInfo.table_details}`, CANVAS_SETTINGS.headerFontSize, 'center');
     }
 
@@ -603,7 +649,7 @@ const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
     ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
     drawText(`Customer: ${saleInfo.customer_name}, Waiter: ${saleInfo.waiter_name}`, CANVAS_SETTINGS.smallFontSize, 'center');
     drawText(`Date: ${saleInfo.date}`, CANVAS_SETTINGS.smallFontSize, 'center');
-    if(saleInfo.sale_type == 'Delivery') {
+    if (saleInfo.sale_type == 'Delivery') {
         drawText(`Reference No: ${saleInfo.delivery_partner_ref_no}`, CANVAS_SETTINGS.smallFontSize, 'center');
     }
 
@@ -611,8 +657,8 @@ const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
         ctx.font = `${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
         ctx.textAlign = "right"; ctx.fillText(`${item.parent_secondary_name} ${item.secondary_name}`, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y += CANVAS_SETTINGS.lineHeight);
         y += CANVAS_SETTINGS.lineHeight;
-        ctx.textAlign = "left";ctx.fillText(`#${i + 1}. ${item.parent_primary_name} ${item.primary_name}`, CANVAS_SETTINGS.paddingX, y);
-        ctx.textAlign = "right";ctx.fillText(`QTY: ${item.qty}`, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
+        ctx.textAlign = "left"; ctx.fillText(`#${i + 1}. ${item.parent_primary_name} ${item.primary_name}`, CANVAS_SETTINGS.paddingX, y);
+        ctx.textAlign = "right"; ctx.fillText(`QTY: ${item.qty}`, CANVAS_SETTINGS.canvasWidth - CANVAS_SETTINGS.paddingX, y);
         y += 10;
         if (item.modifiers_name) {
             y += CANVAS_SETTINGS.lineHeight;
@@ -626,7 +672,24 @@ const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
+            // move y down according to wrapped lines
+            y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
+            y += 10;
+        }
+        if (item.combo_names) {
+            y += CANVAS_SETTINGS.lineHeight;
+            ctx.font = `italic ${CANVAS_SETTINGS.smallFontSize}px sans-serif`;
+            ctx.textAlign = "left";
+            const lineCount = wrapText(
+                ctx,
+                `Combos: ${item.combo_names}`,
+                CANVAS_SETTINGS.paddingX,
+                y,
+                CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
+                CANVAS_SETTINGS.lineHeight
+            );
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -643,7 +706,7 @@ const drawKot = async (canvas, ctx, saleInfo, kitchen) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
         }
@@ -723,10 +786,10 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
     );
     // drawTripleColumn(ctx, y, "", time, "");
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Type", saleInfo.order_type, "نوع الطلب");
-    if(saleInfo.orders_table_text != '') {
+    if (saleInfo.orders_table_text != '') {
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Table Name", saleInfo.orders_table_text, "اسم الجدول");
     }
-    if(saleInfo.order_type == 'Delivery') {
+    if (saleInfo.order_type == 'Delivery') {
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Reference No", saleInfo.delivery_partner_ref_no, "الرقم المرجعي");
     }
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب", 28);
@@ -767,7 +830,7 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -784,7 +847,7 @@ const drawBill = async (canvas, ctx, saleInfo, logoImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -925,21 +988,21 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order No", saleInfo.order_no, "رقم الطلب", 28);
     drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Order Type", saleInfo.sale_type, "نوع الطلب");
     y += CANVAS_SETTINGS.lineHeight;
-    if(saleInfo.sale_type == 'Delivery') {
+    if (saleInfo.sale_type == 'Delivery') {
         drawTripleColumn(ctx, y, "", saleInfo.delivery_partner_name, "");
         drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "Reference No", saleInfo.delivery_partner_ref_no, "الرقم المرجعي");
         y += CANVAS_SETTINGS.lineHeight;
     }
-    if(saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
+    if (saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
         // Customer label
         ctx.fillStyle = "#ccc";
         ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
         ctx.fillStyle = "black";
         drawText("Customer Detail / تفاصيل العميل", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
-        if(saleInfo.customer_name && saleInfo.customer_name != '') {
+        if (saleInfo.customer_name && saleInfo.customer_name != '') {
             drawText(saleInfo.customer_name, CANVAS_SETTINGS.smallFontSize, 'center');
         }
-        if(saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
+        if (saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
             drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "TRN", saleInfo.customer_trn_number, "الرقم الضريبي");
         }
     }
@@ -980,7 +1043,7 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -997,7 +1060,7 @@ const drawInvoice = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -1184,17 +1247,17 @@ const drawRefund = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
         y + CANVAS_SETTINGS.lineHeight / 2 + 5
     );
     y += CANVAS_SETTINGS.lineHeight + 15;
-    
-    if(saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
+
+    if (saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
         // Customer label
         ctx.fillStyle = "#ccc";
         ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
         ctx.fillStyle = "black";
         drawText("Customer Detail / تفاصيل العميل", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
-        if(saleInfo.customer_name && saleInfo.customer_name != '') {
+        if (saleInfo.customer_name && saleInfo.customer_name != '') {
             drawText(saleInfo.customer_name, CANVAS_SETTINGS.smallFontSize, 'center');
         }
-        if(saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
+        if (saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
             drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "TRN", saleInfo.customer_trn_number, "الرقم الضريبي");
         }
     }
@@ -1235,7 +1298,7 @@ const drawRefund = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -1252,7 +1315,7 @@ const drawRefund = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -1428,17 +1491,17 @@ const drawDebit = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
         y + CANVAS_SETTINGS.lineHeight / 2 + 5
     );
     y += CANVAS_SETTINGS.lineHeight + 15;
-    
-    if(saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
+
+    if (saleInfo.customer_id && saleInfo.customer_id != 1 && saleInfo.sale_type != 'Delivery') {
         // Customer label
         ctx.fillStyle = "#ccc";
         ctx.fillRect(0, y, CANVAS_SETTINGS.canvasWidth, CANVAS_SETTINGS.lineHeight);
         ctx.fillStyle = "black";
         drawText("Customer Detail / تفاصيل العميل", CANVAS_SETTINGS.smallFontSize - 2, 'center', CANVAS_SETTINGS.lineHeight / 2, true);
-        if(saleInfo.customer_name && saleInfo.customer_name != '') {
+        if (saleInfo.customer_name && saleInfo.customer_name != '') {
             drawText(saleInfo.customer_name, CANVAS_SETTINGS.smallFontSize, 'center');
         }
-        if(saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
+        if (saleInfo.customer_trn_number && saleInfo.customer_trn_number != '') {
             drawTripleColumn(ctx, y += CANVAS_SETTINGS.lineHeight, "TRN", saleInfo.customer_trn_number, "الرقم الضريبي");
         }
     }
@@ -1479,7 +1542,7 @@ const drawDebit = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -1496,7 +1559,7 @@ const drawDebit = async (canvas, ctx, saleInfo, logoImage, qrCodeImage) => {
                 CANVAS_SETTINGS.canvasWidth - (CANVAS_SETTINGS.paddingX * 2),
                 CANVAS_SETTINGS.lineHeight
             );
-        
+
             // move y down according to wrapped lines
             y += (lineCount - 1) * CANVAS_SETTINGS.lineHeight;
             y += 10;
@@ -1625,9 +1688,9 @@ const drawTripleColumn = (
     const totalWidth = CANVAS_SETTINGS.canvasWidth;
 
     // Column widths in percentage
-    const leftWidth   = totalWidth * 0.30;  // 30%
+    const leftWidth = totalWidth * 0.30;  // 30%
     const centerWidth = totalWidth * 0.40;  // 40%
-    const rightWidth  = totalWidth * 0.40;  // 40%
+    const rightWidth = totalWidth * 0.40;  // 40%
 
     ctx.font = `${fontSize}px sans-serif`;
 
@@ -1656,9 +1719,9 @@ const drawTripleColumnWideRight = (
     const totalWidth = CANVAS_SETTINGS.canvasWidth;
 
     // Adjusted widths for longer Arabic text
-    const leftWidth   = totalWidth * 0.30;
+    const leftWidth = totalWidth * 0.30;
     const centerWidth = totalWidth * 0.25;
-    const rightWidth  = totalWidth * 0.45;
+    const rightWidth = totalWidth * 0.45;
 
     ctx.font = `${fontSize}px sans-serif`;
 
@@ -1701,3 +1764,20 @@ const drawLine = (ctx, y) => {
     ctx.beginPath();
     ctx.moveTo(0, y); ctx.lineTo(CANVAS_SETTINGS.canvasWidth, y); ctx.stroke();
 };
+
+function saveCanvasImage(canvas, folder, filename) {
+    const dir = path.join(__dirname, folder);
+
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const filePath = path.join(dir, filename);
+
+    fs.writeFileSync(
+        filePath,
+        canvas.toBuffer('image/png')
+    );
+
+    return filePath;
+}
