@@ -160,11 +160,11 @@ app.post('/reztra-kot', async (req, res) => {
             const ctx = canvas.getContext("2d");
             await drawKot(canvas, ctx, saleInfo, kitchen);
 
-            // const imagePath = saveCanvasImage(
-            //     canvas,
-            //     'kots',
-            //     `${kitchen.kitchen_name}.png`
-            // );
+            const imagePath = saveCanvasImage(
+                canvas,
+                'kots',
+                `${kitchen.kitchen_name}.png`
+            );
 
             await printer.printImageBuffer(canvas.toBuffer('image/png'));
             printer.cut();
@@ -262,11 +262,11 @@ app.post('/reztra-bill', async (req, res) => {
         const ctx = canvas.getContext("2d");
         await drawBill(canvas, ctx, data.sale_info, logoImage);
 
-        // const imagePath = saveCanvasImage(
-        //     canvas,
-        //     'bills',
-        //     `${data.sale_info.sale_no}.png`
-        // );
+        const imagePath = saveCanvasImage(
+            canvas,
+            'bills',
+            `${data.sale_info.sale_no}.png`
+        );
 
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
@@ -368,11 +368,11 @@ app.post('/reztra-invoice', async (req, res) => {
         const ctx = canvas.getContext("2d");
         await drawInvoice(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
 
-        // const imagePath = saveCanvasImage(
-        //     canvas,
-        //     'invoices',
-        //     `${data.sale_info.sale_no}.png`
-        // );
+        const imagePath = saveCanvasImage(
+            canvas,
+            'invoices',
+            `${data.sale_info.sale_no}.png`
+        );
 
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
@@ -471,11 +471,11 @@ app.post('/reztra-refund', async (req, res) => {
         const ctx = canvas.getContext("2d");
         await drawRefund(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
 
-        // const imagePath = saveCanvasImage(
-        //     canvas,
-        //     'refunds',
-        //     `${data.sale_info.sale_no}.png`
-        // );
+        const imagePath = saveCanvasImage(
+            canvas,
+            'refunds',
+            `${data.sale_info.sale_no}.png`
+        );
 
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
@@ -571,11 +571,11 @@ app.post('/reztra-debit', async (req, res) => {
         const ctx = canvas.getContext("2d");
         await drawDebit(canvas, ctx, data.sale_info, logoImage, qrCodeImage);
 
-        // const imagePath = saveCanvasImage(
-        //     canvas,
-        //     'debits',
-        //     `${data.sale_info.sale_no}.png`
-        // );
+        const imagePath = saveCanvasImage(
+            canvas,
+            'debits',
+            `${data.sale_info.sale_no}.png`
+        );
 
         await printer.printImageBuffer(canvas.toBuffer('image/png'));
         printer.cut();
